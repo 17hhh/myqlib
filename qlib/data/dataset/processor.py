@@ -130,14 +130,20 @@ class DropCol(Processor):
 class FilterCol(Processor):
     def __init__(self, fields_group="feature", col_list=[]):
         self.fields_group = fields_group
+        # 要筛选出的列名列表
         self.col_list = col_list
         print(f"-------------FilterCol: {self.col_list}")
+
     def __call__(self, df):
+        # 获取当前特征组下所有列
         cols = get_group_columns(df, self.fields_group)
         all_cols = df.columns
+        # 获取 DataFrame 的所有列，并计算出在所有列中哪些列不在特征组列中（通过 np.setdiff1d）。
+        # 然后将这些列和 `col_list` 合并，得到最终要保留的列。
         diff_cols = np.setdiff1d(all_cols.get_level_values(-1), cols.get_level_values(-1))
         self.col_list = np.union1d(diff_cols, self.col_list)
         mask = df.columns.get_level_values(-1).isin(self.col_list)
+        # 返回最终只包含这些列的DataFrame
         return df.loc[:, mask]
 
     def readonly(self):

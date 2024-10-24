@@ -8,7 +8,8 @@ from ...utils import get_callable_kwargs
 from ...data.dataset import processor as processor_module
 from inspect import getfullargspec
 
-
+# 检查processor是否有fit_start_time和fit_end_time参数，如果有，则更新kwargs
+# proc_l: 处理器列表
 def check_transform_proc(proc_l, fit_start_time, fit_end_time):
     new_l = []
     for p in proc_l:
@@ -75,7 +76,6 @@ class Alpha360(DataHandlerLP):
                 "inst_processors": inst_processors,
             },
         }
-
         super().__init__(
             instruments=instruments,
             start_time=start_time,

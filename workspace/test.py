@@ -1,11 +1,10 @@
-import torch
+# 初始化配置
+import qlib
+from qlib.constant import REG_CN
+data_uri = 'home/.qlib/qlib_data/cn_data'
+qlib.init(provider_uri=data_uri, region=REG_CN)
 
-# 创建一个形状为 (2, 3) 的张量
-x = torch.tensor([[1, 2, 3], [4, 5, 6]])
-print("原始张量:")
-print(x)
-
-# 使用 view() 将其重塑为 (3, 2)
-y = x.view(3, 2)
-print("重塑后的张量:")
-print(y)
+from qlib.data.dataset.loader import QlibDataLoader
+# 加载原始特征，比如收盘价、最高价
+qdl = QlibDataLoader(config=(['$close', '$high'],['close', 'high'])) 
+qdl.load(instruments=['SH600519'], start_time='20190101', end_time='20191231') # 可以通过freq参数设置周期，默认freq='day'

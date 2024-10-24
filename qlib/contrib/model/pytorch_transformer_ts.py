@@ -101,11 +101,10 @@ class TransformerModel(Model):
 
     def train_epoch(self, data_loader):
         self.model.train()
-
         for data in data_loader:
+            # data:[8192,20,21],feature:[8192,20,20],label:[8192]
             feature = data[:, :, 0:-1].to(self.device)
             label = data[:, -1, -1].to(self.device)
-
             pred = self.model(feature.float())  # .float()
             loss = self.loss_fn(pred, label)
 
@@ -139,9 +138,12 @@ class TransformerModel(Model):
         dataset: DatasetH,
         evals_result=dict(),
         save_path=None,
-    ):
+    ):        
         dl_train = dataset.prepare("train", col_set=["feature", "label"], data_key=DataHandlerLP.DK_L)
         dl_valid = dataset.prepare("valid", col_set=["feature", "label"], data_key=DataHandlerLP.DK_L)
+
+        print("dl_train type: ", isinstance(dl_train, pd.DataFrame))
+        print("dl_train type: ", type(dl_train))
 
         if dl_train.empty or dl_valid.empty:
             raise ValueError("Empty data from dataset, please check your dataset config.")
@@ -173,11 +175,6 @@ class TransformerModel(Model):
             self.logger.info("Epoch%d:", step)
             self.logger.info("training...")
             self.train_epoch(train_loader)
-            print('-----------------------------------------------------')
-            print(train_loader.shape)
-            print(train_loader.head())
-            print('-----------------------------------------------------')
-
             self.logger.info("evaluating...")
             train_loss, train_score = self.test_epoch(train_loader)
             val_loss, val_score = self.test_epoch(valid_loader)
