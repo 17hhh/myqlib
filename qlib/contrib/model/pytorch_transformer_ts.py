@@ -251,18 +251,19 @@ class Transformer(nn.Module):
         self.d_feat = d_feat
 
     def forward(self, src):
-        # src [N, T, F], [512, 60, 6]
-        src = self.feature_layer(src)  # [512, 60, 8]
+        # src [N, T, F], [8192, 20, 20]
+        src = self.feature_layer(src)  # [8192, 20, 64]
 
-        # src [N, T, F] --> [T, N, F], [60, 512, 8]
+        # src [N, T, F] --> [T, N, F], [20,8192,64]
         src = src.transpose(1, 0)  # not batch first
 
         mask = None
-
+        # [20,8192,64]
         src = self.pos_encoder(src)
-        output = self.transformer_encoder(src, mask)  # [60, 512, 8]
+        # [20,8192,64]
+        output = self.transformer_encoder(src, mask)
 
-        # [T, N, F] --> [N, T*F]
+        # [T, N, F] --> [N, T*F] [8192,1]
         output = self.decoder_layer(output.transpose(1, 0)[:, -1, :])  # [512, 1]
 
         return output.squeeze()

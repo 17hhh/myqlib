@@ -74,7 +74,7 @@ class FeedForwardNetwork(nn.Module):
         super().__init__()
         self.linear1 = nn.Linear(d_model, d_ff)
         self.relu = nn.ReLU()
-        self.linear2 = nn.Linear(d_ff, 1)
+        self.linear2 = nn.Linear(d_ff, d_model)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
@@ -103,8 +103,8 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         # [T, N, F]：天数、T历史窗口、F特征数
         # self.pe[: x.size(0), :]=> [T, 1, F]
-        print(self.pe.shape)
-        print(x.shape)
+        # print(self.pe.shape)
+        # print(x.shape)
         return x + self.pe[:x.shape[1], :]
     
 class AddNormLayer(nn.Module):
@@ -113,42 +113,60 @@ class AddNormLayer(nn.Module):
         self.norm = LayerNorm(d_model)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, input, src):
+    def forward(self, input):
         input = self.dropout(input)
-        return self.norm(input+ src) 
+        return self.norm(input)
 
+class TemporalAttention(nn.Module):
+    def __init__(self, d_model):
+        super().__init__()
+        self.trans = nn.Linear(d_model, d_model, bias=False)
+
+    def forward(self, z):
+        # 753,8,256
+        h = self.trans(z) # [N, T, D]
+        # 753,256,1
+        query = h[:, -1, :].unsqueeze(-1)
+        # 753,1,8
+        lam = torch.matmul(h, query).squeeze(-1)  # [N, T, D] --> [N, T]
+        lam = torch.softmax(lam, dim=1).unsqueeze(1)
+        output = torch.matmul(lam, z).squeeze(1)  # [N, 1, T], [N, T, D] --> [N, 1, D]
+        return output
+    
 class TransformerModule(nn.Module):
-    def __init__(self, d_ff=158, d_model=512, dropout=0.2, n_layers=6):
+    def __init__(self, d_ff=158, d_model=512, dropout=0.1, n_layers=6, device=None):
         super(TransformerModule, self).__init__()
         self.d_model = d_model
-        # self.layers = nn.Sequential(
-        #     nn.Linear(d_ff, d_model),
-        #     PositionalEncoding(d_model, max_len=10000),
-        #     Attention(d_model, dropout=0.1),
-        #     AddNormLayer(d_model, dropout=0.1),
-        #     nn.Linear(d_model, 1)
-        # )
+        self.device = device
         self.feature_layer = nn.Linear(d_ff, d_model)
-        self.posi = PositionalEncoding(d_model, max_len=10000)
+        self.posi = PositionalEncoding(d_model, max_len=100)
+        self.attn = MultiHeadAttention(n_heads=8, d_model=d_model, dropout=0.1)
         self.addNorm = AddNormLayer(d_model, dropout=0.1)
-        self.attn = Attention(d_model, dropout=0.1)
+        self.ffn = FeedForwardNetwork(d_model=d_model, d_ff=d_ff, dropout=0.1)
+        self.temporal_att = TemporalAttention(d_model=d_model)
+        self.output = nn.Linear(d_model,1)
 
     def forward(self, src):
-        # output = self.layers(src)
         feature = self.feature_layer(src.float())
         posi_out=self.posi(feature)
         attn_out=self.attn(posi_out)
-        addNorm_out = self.addNorm(attn_out, feature.float())
-        return addNorm_out
+        addNorm_out1 = attn_out + self.addNorm(attn_out)
+        ffn_out = self.ffn(addNorm_out1)
+        addNorm_out2 = ffn_out + self.addNorm(ffn_out)
+        temporal_att_out = self.temporal_att(addNorm_out2)
+        output = self.output(temporal_att_out)  # [batch_size, seq_len, 1]
+        return output
 
 
 def train_transformer(dataloader):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = TransformerModule()
+    model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     losses = []
-    for batch_idx,data in dataloader:
-        feature = data[:, :, 0:-1]
-        label = data[:, -1, -1]
+    for batch_idx,data in enumerate(dataloader):
+        feature = data[:, :, 0:-1].to(device)
+        label = data[:, -1, -1].to(device)
         pred = model(feature.float())
         # print(pred)
         mask = ~torch.isnan(label)
@@ -158,5 +176,23 @@ def train_transformer(dataloader):
         loss.backward()
         torch.nn.utils.clip_grad_value_(model.parameters(), 3.0)
         optimizer.step()
-        print(f'batch_idx:{batch_idx}, loss: {loss.item()}')
+        # print(f'batch_idx:{batch_idx}, loss: {loss.item()}')
     return float(np.mean(losses))
+
+def test_transformer(dataloader):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model = TransformerModule()
+    model.to(device)
+    losses = []
+    scores = []
+    for batch_idx, data in enumerate(dataloader):
+        feature = data[:, :, 0:-1].to(device)
+        label = data[:, -1, -1].to(device)
+        with torch.no_grad():
+            pred = model(feature.float())
+            loss = torch.mean((pred - label) ** 2)
+            losses.append(loss.item())
+            mask = ~torch.isnan(label)
+            score = torch.mean((pred[mask] - label[mask]) ** 2)
+            scores.append(score.item())
+    return float(np.mean(losses)), float(np.mean(scores))
