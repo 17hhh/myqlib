@@ -216,25 +216,28 @@ class TransformerModule(nn.Module):
         return output
 
 
-def train_transformer(dataloader):
+def train_transformer(dataloader, epoch):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = TransformerModule()
+    model.load_state_dict(torch.load(f'params/transformer_model_epoch3.pkl', map_location=device, weights_only=True))
     model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.00001)
     losses = []
     for batch_idx,data in enumerate(dataloader):
         feature = data[:, :, 0:-1].to(device)
         label = data[:, -1, -1].to(device)
         pred = model(feature.float())
         # print(pred)
-        mask = ~torch.isnan(label)
-        loss = torch.mean((pred[mask] - label[mask]) ** 2)
+        loss = torch.mean((pred - label) ** 2)
         losses.append(loss.item())
         optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_value_(model.parameters(), 3.0)
         optimizer.step()
-        # print(f'batch_idx:{batch_idx}, loss: {loss.item()}')
+        # print(f'batch_idx:{batch_idx}, loss: {loss.item()},feature: {feature.shape}')
+    if(epoch == 3):
+        torch.save(model.state_dict(), f'params/transformer_model_epoch{epoch}.pkl')
+        
     return float(np.mean(losses))
 
 def test_transformer(dataloader):
